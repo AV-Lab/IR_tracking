@@ -23,7 +23,7 @@ The main entry point is in run_tracking.py. This file runs the tracker on a spec
 
 Code Files:
 
--detection.py: Detection base class.
+- detection.py: Detection base class.
 -kalman_filter.py: A Kalman filter implementation and concrete parametrization for image space filtering.
 -linear_assignment.py: This module contains code for min cost matching and the matching cascade.
 -iou_matching.py: This module contains the IOU matching metric.
