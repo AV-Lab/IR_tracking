@@ -23,13 +23,11 @@ The main entry point is in run_tracking.py. This file runs the tracker on a spec
 
 Code Files:
 
-- detection.py: Detection base class.
+- descriptor.py: Functions to compute descriptor. 
 - kalman_filter.py: A Kalman filter implementation and concrete parametrization for image space filtering.
-- linear_assignment.py: This module contains code for min cost matching and the matching cascade.
-- iou_matching.py: This module contains the IOU matching metric.
-- nn_matching.py: A module for a nearest neighbor matching metric.
-- track.py: The track class contains single-target track data such as Kalman state, number of hits, misses, hit streak, associated feature vectors, etc.
-- tracker.py: This is the multi-target tracker class.
+- track.py: The track class contains single-target track data such as Kalman state, number of hits, misses, hit streak, feature matrix, etc.
+- tracker.py: Multi-target tracker class.
+- utils_functions.py: Helping functions.
 
 ### Citing LLV Tracker
 If you find this repo useful in your research, please consider citing the following paper:
