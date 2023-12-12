@@ -9,17 +9,19 @@ merge short tracklets belonging to the same object in one track. We evaluate the
 
 ### Running the tracker
 ``` 
-python deep_sort_app.py \
-    --sequence_dir=./MOT16/test/MOT16-06 \
-    --detection_file=./resources/detections/MOT16_POI_test/MOT16-06.npy \
-    --min_confidence=0.3 \
-    --nn_budget=100 \
-    --display=True
-``` 
+python run_tracking.py \
+    --sequence_dir (Path to sequence directory)\
+    --min_confidence (Disregard detections lower threshold)\
+    --device (cuda device, i.e. 0 or 0,1,2,3 or cpu)\
+    --k (number of consequitive frames to count track as active)
+```
 
-### The main entry point is in run_tracking.py. This file runs the tracker on a specified sequence.
 
-In package deep_sort is the main tracking code:
+### Overview of Repository
+
+The main entry point is in run_tracking.py. This file runs the tracker on a specified sequence.
+
+Files:
 
 detection.py: Detection base class.
 kalman_filter.py: A Kalman filter implementation and concrete parametrization for image space filtering.
