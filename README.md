@@ -29,3 +29,7 @@ nn_matching.py: A module for a nearest neighbor matching metric.
 track.py: The track class contains single-target track data such as Kalman state, number of hits, misses, hit streak, associated feature vectors, etc.
 tracker.py: This is the multi-target tracker class.
 The deep_sort_app.py expects detections in a custom format, stored in .npy files. These can be computed from MOTChallenge detections using generate_detections.py. We also provide pre-generated detections.
+
+
+### Citing LLV Tracker
+If you find this repo useful in your research, please consider citing the following paper:
