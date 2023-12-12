@@ -33,3 +33,13 @@ The deep_sort_app.py expects detections in a custom format, stored in .npy files
 
 ### Citing LLV Tracker
 If you find this repo useful in your research, please consider citing the following paper:
+``` 
+@inproceedings{,
+  title={},
+  author={},
+  booktitle={},
+  year={},
+  organization={IEEE},
+  doi={}
+}
+``` 
