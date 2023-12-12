@@ -7,7 +7,7 @@ real-time efficient algorithmic solution. We base our solution on DeepSORT algor
 we design an appearance descriptor suitable for association problem of TIR images. Furthermore, to address the problem of missing association and detection, we propose a fusion block to
 merge short tracklets belonging to the same object in one track. We evaluate the tracker on CAMEL dataset and experimentally on the sequences we collected using an IR-camera.
 
-### Running the tracker
+### Running LLV Tracker
 ``` 
 python run_tracking.py \
     --sequence_dir (Path to sequence directory)\
