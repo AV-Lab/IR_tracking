@@ -1,12 +1,17 @@
 # Multi-Target Tracker for Low Light Vision
 
+### Introduction
+
 This repository contains implementation for Multi-Target Tracker for Low Light Vision. LLV tracker is a multi-object tracker for TIR images with a focus on simple and
 real-time efficient algorithmic solution. We base our solution on DeepSORT algorithm and extend it to TIR tracking of both, pedestrians and vehicles. To adopt DeepSORT tracker,
 we design an appearance descriptor suitable for association problem of TIR images. Furthermore, to address the problem of missing association and detection, we propose a fusion block to
 merge short tracklets belonging to the same object in one track. We evaluate the tracker on CAMEL dataset and experimentally on the sequences we collected using an IR-camera.
 
+### Running the tracker
 
-### n the top-level directory are executable scripts to execute, evaluate, and visualize the tracker. The main entry point is in deep_sort_app.py. This file runs the tracker on a MOTChallenge sequence.
+
+
+### The main entry point is in run_tracking.py. This file runs the tracker on a specified sequence.
 
 In package deep_sort is the main tracking code:
 
