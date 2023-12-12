@@ -129,7 +129,7 @@ class KalmanFilter(object):
 
         return mean, covariance
 
-    def project(self, mean, covariance):
+    def project(self, mean, covariance, conf=None):
         """Project state distribution to measurement space.
 
         Parameters
@@ -156,9 +156,11 @@ class KalmanFilter(object):
         mean = np.dot(self._update_mat, mean)
         covariance = np.linalg.multi_dot((
             self._update_mat, covariance, self._update_mat.T))
+        #if conf != None:
+            #innovation_cov = (1-conf)*innovation_cov
         return mean, covariance + innovation_cov
 
-    def update(self, mean, covariance, measurement):
+    def update(self, mean, covariance, measurement, conf=None):
         """Run Kalman filter correction step.
 
         Parameters
@@ -178,18 +180,18 @@ class KalmanFilter(object):
             Returns the measurement-corrected state distribution.
 
         """
-        projected_mean, projected_cov = self.project(mean, covariance)
 
-        chol_factor, lower = scipy.linalg.cho_factor(
-            projected_cov, lower=True, check_finite=False)
-        kalman_gain = scipy.linalg.cho_solve(
-            (chol_factor, lower), np.dot(covariance, self._update_mat.T).T,
-            check_finite=False).T
+
+        projected_mean, projected_cov = self.project(mean, covariance, conf)
+        
+
+        chol_factor, lower = scipy.linalg.cho_factor(projected_cov, lower=True, check_finite=False)
+        kalman_gain = scipy.linalg.cho_solve((chol_factor, lower), np.dot(covariance, self._update_mat.T).T,check_finite=False).T
         innovation = measurement - projected_mean
 
         new_mean = mean + np.dot(innovation, kalman_gain.T)
-        new_covariance = covariance - np.linalg.multi_dot((
-            kalman_gain, projected_cov, kalman_gain.T))
+        new_covariance = covariance - np.linalg.multi_dot((kalman_gain, projected_cov, kalman_gain.T))
+
         return new_mean, new_covariance
 
     def gating_distance(self, mean, covariance, measurements,

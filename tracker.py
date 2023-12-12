@@ -14,32 +14,31 @@ from descriptor import compute_descriptor
 from sklearn.metrics.pairwise import pairwise_distances
 from scipy.optimize import linear_sum_assignment as linear_assignment
 from scipy.spatial.distance import euclidean
+from scipy import spatial
+from skimage.feature import match_template
+from utils_functions import from_xyah_to_tlbr, compute_orientation_vector, compute_direction_vector, compute_overlap
+from scipy.spatial.distance import cosine
 from fastdtw import fastdtw
+from sklearn.metrics.pairwise import cosine_similarity
 
-INFTY_COST = 1e+5
+
+
+
+INFTY_COST = 1e+15
 gated_cost=INFTY_COST
+gating_threshold = 100 #16.919 #9.4877
 
 class Tracker:
-    """
-    This is the multi-target tracker.
-
-    Parameters
-    ----------
 
 
-    Attributes
-    ----------
-
-
-    """
-
-    def __init__(self, max_distance= 100, max_age=30, n_init=3):
-        self.max_distance = max_distance
+    def __init__(self, max_age=50, k=5):
         self.max_age = max_age
-        self.n_init = n_init
+        self.n_init = k
         self.kf = KalmanFilter()
         self.tracks = []
         self._next_id = 1
+        self.max_iou_distance = 0.5
+        
 
     def predict(self):
         """Propagate track state distributions one time step forward."""
@@ -49,8 +48,16 @@ class Tracker:
     def update(self, detections):
         """Perform measurement update and track management."""
         
-        # Run matching Procedure
         matches, unmatched_tracks, unmatched_detections = self.match(detections)
+
+        #Associate remaining tracks together with unmatched detections using IOU.
+        iou_track_candidates = [k for k in unmatched_tracks if self.tracks[k].time_since_update <= 1]
+        unmatched_tracks = [k for k in unmatched_tracks if self.tracks[k].time_since_update > 1]
+        matches_iou, unmatched_tracks_iou, unmatched_detections = self.compute_iou_matches(detections, 
+                                                                                            iou_track_candidates, 
+                                                                                             unmatched_detections)
+        matches += matches_iou
+        unmatched_tracks = list(set(unmatched_tracks + unmatched_tracks_iou))
 
         # For each match update with observations
         for track_idx, detection_idx in matches:
@@ -63,9 +70,15 @@ class Tracker:
         # For each unmatch detection initiate a new track
         for detection_idx in unmatched_detections:
             self.initiate_track(detections[detection_idx])
-            
+
+        #Perform track fusion between confirmed tracks age more than k and tracks which just became confirmed
+        confirmed_tracks = [i for i, t in enumerate(self.tracks) if t.age > self.n_init and t.is_confirmed()]
+        tracks_to_fuse = [i for i,t in enumerate(self.tracks) if t.age == self.n_init]
+        self.fuse_tracks(confirmed_tracks, tracks_to_fuse)
+
         # Remove tracks marked deleted
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
+
 
     def initiate_track(self, detection):
         """Creating a new track."""
@@ -75,62 +88,32 @@ class Tracker:
         self._next_id += 1
         
     def match(self, detections):   
-        """Perform matching cascade."""
+        """Perform global matching """
         
-        cascade_depth = self.max_age
         track_indices = list(range(len(self.tracks)))
         detection_indices = list(range(len(detections)))
-
-        # before matching all detections are unmatched, we store indicies
-        unmatched_detections = detection_indices
-        matches = []
-        
-        # The matching is happening in a cascade form: at each age level 
-        # we match detections that remained unmatched at the previous level
-        
-        for level in range(cascade_depth):
-            if len(unmatched_detections) == 0:  # No detections left
-                break
-
-            # we select tracks with age = level 
-            track_indices_l = [
-                k for k in track_indices
-                if self.tracks[k].time_since_update == 1 + level
-            ]
-            if len(track_indices_l) == 0:  # Nothing to match at this level
-                continue
-
-            matches_l, _, unmatched_detections = self.min_cost_matching(detections,
-                                                                   track_indices_l, 
-                                                                   unmatched_detections)
-            matches += matches_l
-            
-        unmatched_tracks = list(set(track_indices) - set(k for k, _ in matches))
+        matches, unmatched_tracks, unmatched_detections = self.min_cost_matching(detections, 
+                                                                                track_indices, 
+                                                                                detection_indices)   
         return matches, unmatched_tracks, unmatched_detections
 
                 
-    def min_cost_matching(self, detections, track_indices, unmatched_detection_indices):
+    def min_cost_matching(self, detections, track_indices, detection_indices):
         """Solve linear assignment problem for matching tracks and detctions."""
         
-        if len(unmatched_detection_indices) == 0 or len(track_indices) == 0:
-            return [], track_indices, unmatched_detection_indices  # Nothing to match.
+        if len(detection_indices) == 0 or len(track_indices) == 0:
+            return [], track_indices, detection_indices  # Nothing to match.
 
-        cost_matrix = self.compute_cost_matrix(detections, track_indices, unmatched_detection_indices)
-        cost_matrix[cost_matrix > self.max_distance] = self.max_distance + 1e-5
-        
-        # Hungarian algorithm
-        indices = linear_assignment(cost_matrix)
-        
-        print(indices)
-
+        cost_matrix  = self.compute_cost_matrix(detections, track_indices, detection_indices)
+        indices = self.majority_voting(cost_matrix)
         matches, unmatched_tracks, unmatched_detections = [], [], []
         
         # Regsiter dectections that were not matched after Hungarian algorithm
-        for col, detection_idx in enumerate(unmatched_detection_indices):
+        for col, detection_idx in enumerate(detection_indices):
             if col not in indices[1]:
                 unmatched_detections.append(detection_idx)
                 
-        # Register tacks with no matching detection
+        # Register tracks with no matching detection
         for row, track_jdx in enumerate(track_indices):
             if row not in indices[0]:
                 unmatched_tracks.append(track_jdx)
@@ -138,39 +121,140 @@ class Tracker:
         # Register matches        
         for row, col in zip(indices[0], indices[1]):
             track_idx = track_indices[row]
-            detection_idx = unmatched_detection_indices[col]
-            if cost_matrix[row, col] > self.max_distance:
+            detection_idx = detection_indices[col]
+            matches.append((track_idx, detection_idx))
+                
+        return matches, unmatched_tracks, unmatched_detections
+    
+    def compute_cost_matrix(self, detections, track_indices, detection_indices):
+        """Computing Cost matrix."""
+                
+        features = [detections[i][1] for i in detection_indices]
+        targets = [self.tracks[i].descriptor for i in track_indices]
+
+        cost_matrix = np.zeros((3, len(targets), len(features)))
+
+        for i, t in enumerate(targets):
+            for j, d in enumerate(features):
+                for idx in range(3):
+                    cost_matrix[idx][i][j] = cosine(t[idx], d[idx])
+
+        measurements = np.asarray([detections[i][0] for i in detection_indices])
+        
+
+        for row, track_idx in enumerate(track_indices):
+           track = self.tracks[track_idx]
+           gating_distance = self.kf.gating_distance(track.mean, track.covariance, measurements)
+           cost_matrix[:, row, gating_distance > gating_threshold] = gated_cost
+
+        return cost_matrix
+
+
+    def majority_voting(self, cost_matrix):
+        indices = []
+        matches = {}
+        final_matches = ([],[])
+
+        #print(cost_matrix)
+
+        # Hungarian algorithm
+        for idx in range(3):
+            x, y = linear_assignment(cost_matrix[idx])
+            for row, col in zip(x, y):
+                if cost_matrix[0][row][col] != gated_cost:
+                    if (row, col) in matches:
+                        matches[(row, col)] += 1
+                    else: matches[(row, col)] = 1
+
+        for k, v in matches.items():
+            if v >= 2:
+                final_matches[0].append(k[0])
+                final_matches[1].append(k[1])
+
+
+        #print(final_matches)
+        return final_matches
+
+    def compute_iou_matches(self, detections, track_indices, detection_indices):
+        """Computing Cost matrix."""
+                
+        if len(detection_indices) == 0 or len(track_indices) == 0:
+            return [], track_indices, detection_indices  # Nothing to match.
+
+        features = [detections[i][3] for i in detection_indices]
+        targets = [self.tracks[i].to_tlbr() for i in track_indices]
+
+        cost_matrix = np.zeros((len(targets), len(features)))
+
+        for i, t in enumerate(targets):
+            for j, d in enumerate(features):
+                iou = compute_overlap(t,d)
+                #print(iou)
+                cost_matrix[i][j] = iou if iou > self.max_iou_distance else gated_cost
+
+        indices = linear_assignment(cost_matrix)
+
+        matches, unmatched_tracks, unmatched_detections = [], [], []
+        
+        for col, detection_idx in enumerate(detection_indices):
+            if col not in indices[1]:
+                unmatched_detections.append(detection_idx)
+        for row, track_idx in enumerate(track_indices):
+            if row not in indices[0]:
+                unmatched_tracks.append(track_idx)
+        for row, col in zip(indices[0], indices[1]):
+            track_idx = track_indices[row]
+            detection_idx = detection_indices[col]
+            if cost_matrix[row, col] == gated_cost:
                 unmatched_tracks.append(track_idx)
                 unmatched_detections.append(detection_idx)
             else:
                 matches.append((track_idx, detection_idx))
-                
         return matches, unmatched_tracks, unmatched_detections
-    
-    def compute_cost_matrix(self, detections, track_indices, unmatched_detection_indices):
-        """Computing Cost matrix."""
-                
-        features = [detections[i][1] for i in unmatched_detection_indices]
-        targets = [self.tracks[i].descriptor for i in track_indices]
-        cost_matrix = np.zeros((len(targets), len(features)))
-        for i, t in enumerate(targets):
-            for j, d in enumerate(features):
-                #print(len(self.tracks[i].descriptor), len(detections[j][1]))
-                distance, path = fastdtw(t, d, dist=euclidean)
-                cost_matrix[i][j] = distance
 
 
-        """Invalidate infeasible entries in cost matrix based on the state
-        #distributions obtained by Kalman filtering."""
+
+    def fuse_tracks(self, confirmed_tracks, tracks_to_fuse):
+        """Performs fusion of the tracks."""
+
+        if len(confirmed_tracks) == 0 or len(tracks_to_fuse) == 0:
+            return 
+
         
-        gating_threshold = 9.4877
-        measurements = np.asarray([detections[i][0] for i in unmatched_detection_indices])
-        for row, track_idx in enumerate(track_indices):
-            track = self.tracks[track_idx]
-            gating_distance = self.kf.gating_distance(
-                track.mean, track.covariance, measurements)
-            cost_matrix[row, gating_distance > gating_threshold] = gated_cost
-         
-        #print(cost_matrix)
-        return cost_matrix
+        cost_matrix = np.zeros((len(confirmed_tracks), len(tracks_to_fuse)))
 
+        h_confirmed_tarcks = [np.array(self.tracks[t].tracking_history[-self.n_init:])[:,:2] for t in confirmed_tracks]
+        h_tracks_to_fuse = [np.array(self.tracks[t].tracking_history[-self.n_init:])[:,:2] for t in tracks_to_fuse]
+
+        for i, t in enumerate(h_confirmed_tarcks):
+            for j, d in enumerate(h_tracks_to_fuse):
+                distance = fastdtw(t,d) 
+                cost_matrix[i][j] = distance[0]
+
+        measurements = np.array([self.tracks[t].tracking_history[-1] for t in tracks_to_fuse])
+
+        for row, track_idx in enumerate(confirmed_tracks):
+             track = self.tracks[track_idx]
+             gating_distance = self.kf.gating_distance(track.mean, track.covariance, measurements)
+             for col, gate in enumerate(gating_distance): 
+                if gate > gating_threshold:
+                    cost_matrix[row, col]= gated_cost
+
+
+        indices = linear_assignment(cost_matrix)
+
+        # Merge Tracks        
+        for row, col in zip(indices[0], indices[1]):
+            if cost_matrix[row][col] != gated_cost:
+                print(confirmed_tracks[row], tracks_to_fuse[col])
+                self.merge_tracks(confirmed_tracks[row], tracks_to_fuse[col])
+                print('merged')
+
+
+
+    def merge_tracks(self, idx, jdx):
+        """Fusing two tracks."""
+        self.tracks[idx].hits += self.tracks[jdx].hits
+        self.tracks[idx].time_since_update = 0
+        self.tracks[idx].descriptor = 0.75*self.tracks[idx].descriptor + 0.25*self.tracks[jdx].descriptor
+        self.tracks[jdx].set_deleted()

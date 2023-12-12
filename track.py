@@ -37,17 +37,19 @@ class Track:
 
     """
 
-    def __init__(self, mean, covariance, track_id, n_init, max_age, descriptor):
+    def __init__(self, mean, covariance, track_id, n_init, max_age, descriptor=None):
         self.mean = mean
         self.covariance = covariance
         self.track_id = track_id
-        self.hits = 1
-        self.age = 1
+        self.hits = 0
+        self.age = 0
         self.time_since_update = 0
         self.state = TrackState.Tentative
         self.descriptor = descriptor
+        self.alpha = 0.9
         self._n_init = n_init
         self._max_age = max_age
+        self.tracking_history = []
 
 
     def predict(self, kf):
@@ -57,16 +59,16 @@ class Track:
         self.mean, self.covariance = kf.predict(self.mean, self.covariance)
         self.age += 1
         self.time_since_update += 1
+        self.tracking_history.append(self.to_xyah())
 
     def update(self, kf, detection):
         """Perform Kalman filter measurement update step and update the feature cache."""
         
-        self.mean, self.covariance = kf.update(self.mean, self.covariance, detection[0])
-        self.descriptor = detection[1]
-
+        self.mean, self.covariance = kf.update(self.mean, self.covariance, detection[0], detection[2])
+        self.descriptor = self.alpha * self.descriptor + (1-self.alpha) * detection[1]
         self.hits += 1
         self.time_since_update = 0
-        if self.state == TrackState.Tentative and self.hits >= self._n_init:
+        if self.state == TrackState.Tentative and self.hits >= self._n_init: 
             self.state = TrackState.Confirmed
             
     def to_tlwh(self):
@@ -97,10 +99,26 @@ class Track:
         ret = self.to_tlwh()
         ret[2:] = ret[:2] + ret[2:]
         return ret
+
+    def to_xyah(self):
+        """Get current position in bounding box format `(center x, center y. aspect ratio, height)`.
+
+        Returns
+        -------
+        ndarray
+            The bounding box.
+
+        """
+        ret = self.to_tlwh()
+        ret[0] += ret[2] / 2
+        ret[1] += ret[3] / 2
+        ret[2] /= ret[3]
+        return [ret[0], ret[1], ret[2], ret[3]]
     
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step).
         """
+
         if self.state == TrackState.Tentative:
             self.state = TrackState.Deleted
         elif self.time_since_update > self._max_age:
@@ -118,3 +136,16 @@ class Track:
     def is_deleted(self):
         """Returns True if this track is dead and should be deleted."""
         return self.state == TrackState.Deleted
+
+    def set_tentative(self):
+        """Returns True if this track is tentative (unconfirmed).
+        """
+        self.state = TrackState.Tentative
+
+    def set_confirmed(self):
+        """Returns True if this track is confirmed."""
+        self.state = TrackState.Confirmed
+
+    def set_deleted(self):
+        """Returns True if this track is dead and should be deleted."""
+        self.state = TrackState.Deleted

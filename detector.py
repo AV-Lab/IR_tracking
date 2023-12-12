@@ -20,71 +20,58 @@ from utils.torch_utils import select_device, load_classifier, time_synchronized,
 
 
 class Detector:
-    """
 
-
-    Parameters
-    ----------
-
-
-    Attributes
-    ----------
-
-    """
 
     def __init__(self, weights, min_confidence, device):
         self.weights = weights
         self.min_confidence = min_confidence
-        self.device = device
-        self.iou_threshold = 0.5 #IOU threshold for NMS
+        self.device = select_device('')
+        self.iou_threshold = 0.45 #IOU threshold for NMS
+
+        with torch.no_grad():
+            self.model = attempt_load([self.weights], map_location=self.device)  # load FP32 model
 
     def detect(self, source, imgsz):
         
         with torch.no_grad():
-            device = select_device(self.device)
-            half = device.type != 'cpu'  # half precision only supported on CUDA
-        
-            # Load model
-            model = attempt_load(self.weights, map_location=device)  # load FP32 model
-            stride = int(model.stride.max())  # model stride
+            
+            stride = int(self.model.stride.max())  # model stride
             imgsz = check_img_size(imgsz, s=stride)  # check img_size
                 
-            if half: model.half()  # to FP16
-            
             # Set Dataloader
             vid_path, vid_writer = None, None
             dataset = LoadImages(source, img_size=imgsz, stride=stride)
         
             # Get names and colors
-            names = model.module.names if hasattr(model, 'module') else model.names
+            names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
             colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
             
             # Run inference
-            if device.type != 'cpu':
-                model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+            if self.device.type != 'cpu':
+                self.model(torch.zeros(1, 3, imgsz, imgsz).to(self.device).type_as(next(self.model.parameters())))  # run once
             old_img_w = old_img_h = imgsz
             old_img_b = 1
             
             for path, img, im0s, vid_cap in dataset:
-                img = torch.from_numpy(img).to(device)
-                img = img.half() if half else img.float()  # uint8 to fp16/32
+                img = torch.from_numpy(img).to(self.device)
+                img = img.float()  # uint8 to fp16/32
                 img /= 255.0  # 0 - 255 to 0.0 - 1.0
                 if img.ndimension() == 3:
                     img = img.unsqueeze(0)
 
                 # Warmup
-                if device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
+                if self.device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
                     old_img_b = img.shape[0]
                     old_img_h = img.shape[2]
                     old_img_w = img.shape[3]
                     for i in range(3):
-                        model(img, augment=False)[0]
+                        self.model(img, augment=False)[0]
 
                 with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
-                    pred = model(img, augment=False)[0]
+                    pred = self.model(img, augment=False)[0]
 
                 # Apply NMS
-                pred = non_max_suppression(pred, self.min_confidence, self.iou_threshold, classes=None, agnostic=False)
+                pred = non_max_suppression(pred, self.min_confidence, self.iou_threshold, classes=None, agnostic=True)
                 results = []
                 
                 # Process detections
