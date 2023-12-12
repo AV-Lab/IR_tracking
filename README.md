@@ -8,14 +8,14 @@ we design an appearance descriptor suitable for association problem of TIR image
 merge short tracklets belonging to the same object in one track. We evaluate the tracker on CAMEL dataset and experimentally on the sequences we collected using an IR-camera.
 
 ### Running the tracker
-<code>
+``` 
 python deep_sort_app.py \
     --sequence_dir=./MOT16/test/MOT16-06 \
     --detection_file=./resources/detections/MOT16_POI_test/MOT16-06.npy \
     --min_confidence=0.3 \
     --nn_budget=100 \
     --display=True
-</code>
+``` 
 
 ### The main entry point is in run_tracking.py. This file runs the tracker on a specified sequence.
 
