@@ -32,12 +32,12 @@ Code Files:
 ### Citing LLV Tracker
 If you find this repo useful in your research, please consider citing the following paper:
 ``` 
-@inproceedings{,
-  title={},
-  author={},
-  booktitle={},
-  year={},
-  organization={IEEE},
-  doi={}
+@inproceedings{madjid2023multi,
+  title={Multi-Target Tracker for Low Light Vision},
+  author={Madjid, Nadya Abdel and Sharma, Arjun and Hassan, Bilal and Werghi, Naoufel and Dias, Jorge and Khonji, Majid},
+  booktitle={2023 21st International Conference on Advanced Robotics (ICAR)},
+  pages={252--257},
+  year={2023},
+  organization={IEEE}
 }
 ``` 
